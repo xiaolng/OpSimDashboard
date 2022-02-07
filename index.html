@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="https://d3js.org/d3-array.v2.min.js"></script>
+<script type="text/javascript", src="./js/d3/d3.js"></script>
+<script src="https://d3js.org/d3-geo.v1.min.js"></script>
+<script src="https://d3js.org/d3-geo-projection.v2.min.js"></script>
+
+<style>
+.plotbutton{
+  background-color: #4CAF50
+}
+</style>
+</head>
+<body>
+<h2>Histogram chart for LSST OpSims</h2>
+<p>Click line to highlight, double click to cancel. Click the legend dots to select families. Mouseover legend text to preview. Mouseleave legend text to clear selections.</p>
+
+<div class="slider item">
+      <div id="selected_nbins">number of bins </div>
+      <div><span class="low">10</span> 
+           <input type="range" id='nbins_slider' name="scale" min="10" max="100" step='1' value="50"> 
+           <span>100</span></div>
+      <div> <input type="checkbox" id="normCheckbox"> Normalized to 1
+      </div>
+</div>
+<button class="button" onclick = "update()">Update</button>
+
+<table>
+<thead>
+  <tr>
+    <th id="hist"></th>
+    <th id="legend"></th>
+    <th id="barh" rowspan="2">
+    <div>
+      <select id="barh_sortby" >
+        <option value="name" > name </option>
+        <option value="TPM" selected=""> TPM </option>
+        <option value="CI" > CI </option>
+        <option value="LS" > LS </option>
+        <option value="Sum" > Sum </option>
+      </select>
+      <select id="barh_order" >
+        <option value="ascending" selected> ascending </option>
+        <option value="descending" > descending </option>
+      </select>
+    </div>
+
+    <div>
+      <span >TPM </span><input type="range" class="barhweight" id="wTPM" min=0 max=1 step=0.01 value=0.33>
+      <span>CI</span><input type="range" class="barhweight" id="wCI" min=0 max=1 step=0.01 value=0.33> 
+    </div>
+
+    </th>
+  </tr>
+  <tr>
+    <td id="skymap"></td>
+    <td id="radar"></td>
+  </tr>
+</table>
+
+<script type="text/javascript">
+var width = 900
+var height = 800
+
+var margin = {top: 70, right: 70, bottom: 70, left: 70},
+    w = width - margin.left - margin.right,
+    h = height - margin.top - margin.bottom;
+
+var svg = d3.select("#hist").append("svg")
+    .attr("width", w + margin.left + margin.right)
+    .attr("height", h + margin.top + margin.bottom)
+    .style("background-color", "#f7f7f7f7")
+    .append("g")
+    .attr("transform", "translate(" + margin.left +", "+ margin.top +")")
+
+// add axis label
+svg.append("text").attr("text-anchor", "end")
+   .attr("x", width/2)
+   .attr("y",  height-margin.bottom-20)
+   .text("recovery rate")
+
+svg.append("text").attr("text-anchor", "center")
+   .attr("transform", "rotate(-90)")
+   .attr("y", -margin.left + 20)
+   .attr("x", margin.top - height/2 + 20)
+   .text("N (healpix nside=16)")
+
+svg.append("text").attr("text-anchor", "end")
+   .attr("transform", "rotate(-90)")
+   .attr("y", -margin.left + width - 20)  // actual x because of rotation
+   .attr("x", margin.top - height/2 + 50)
+   .text("N cumulative")
+
+var w2 = 500
+var svg2 = d3.select("#legend").append("svg")
+    .attr("width", w2 + margin.left + margin.right)
+    .attr("height", h + margin.top + margin.bottom)
+    .style("background-color", "#f7f7f7f7")
+    .append("g")
+    .attr("transform", "translate(" + margin.left +", "+ margin.top +")")
+
+//var color = d3.scale.category10(); // use in d3.v3
+//var color = d3.scaleOrdinal(d3.schemeCategory10) // in > d3.v4
+
+//families = [ '#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928', '#004301', '#5e0022', '#ed00d7', '#00008f', '#626d60', '#9978ff', '#5b3600', '#00a799']
+//families = ['#a6cee3','#1f78b4','#1f78b4','#b2df8a','#b2df8a','#b2df8a','#33a02c','#33a02c','#33a02c','#33a02c','#33a02c','#33a02c','#fb9a99','#e31a1c','#e31a1c','#e31a1c','#e31a1c','#e31a1c','#e31a1c','#fdbf6f','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#6a3d9a','#6a3d9a','#6a3d9a','#6a3d9a','#6a3d9a','#ffff99','#b15928','#004301','#004301','#004301','#004301','#004301','#004301','#5e0022','#5e0022','#5e0022','#5e0022','#ed00d7','#00008f','#00008f','#00008f','#00008f','#00008f','#00008f','#626d60','#626d60','#626d60','#626d60','#9978ff','#5b3600','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799']
+
+
+families = ['#a6cee3','#1f78b4','#1f78b4','#b2df8a','#b2df8a','#b2df8a','#33a02c','#33a02c','#33a02c','#33a02c','#33a02c','#33a02c','#fb9a99','#e31a1c','#e31a1c','#e31a1c','#e31a1c','#e31a1c','#e31a1c','#fdbf6f','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#ff7f00','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#6a3d9a','#6a3d9a','#6a3d9a','#6a3d9a','#6a3d9a','#ffff99','#b15928','#004301','#004301','#004301','#004301','#004301','#004301','#5e0022','#5e0022','#5e0022','#5e0022','#ed00d7','#00008f','#00008f','#00008f','#00008f','#00008f','#00008f','#626d60','#626d60','#626d60','#626d60','#9978ff','#5b3600','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#00a799','#b2df8a','#b2df8a','#1F87A7','#1F87A7','#1F87A7','#1F87A7','#1F87A7','#1F87A7','#2A0319','#2A0319','#2A0319','#2A0319','#2A0319','#2A0319','#2A0319','#2A0319','#46982C','#46982C','#46982C','#46982C','#46982C','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#cab2d6','#933379','#933379','#933379','#933379','#933379','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#004301','#626d60','#626d60','#626d60','#626d60','#626d60','#626d60','#626d60','#626d60','#626d60','#626d60','#626d60','#9978ff','#9978ff','#9978ff','#9978ff']
+
+//var variables = ["variable 1", "variable 2"]
+variables =['agnddf_v1_5_10yrs',
+ 'alt_dust_v1_5_10yrs',
+ 'alt_roll_mod2_dust_sdf_0_20_v1_5_10yrs',
+ 'baseline_2snaps_v1_5_10yrs',
+ 'baseline_samefilt_v1_5_10yrs',
+ 'baseline_v1_5_10yrs',
+ 'bulges_bs_v1_5_10yrs',
+ 'bulges_bulge_wfd_v1_5_10yrs',
+ 'bulges_cadence_bs_v1_5_10yrs',
+ 'bulges_cadence_bulge_wfd_v1_5_10yrs',
+ 'bulges_cadence_i_heavy_v1_5_10yrs',
+ 'bulges_i_heavy_v1_5_10yrs',
+ 'daily_ddf_v1_5_10yrs',
+ 'dcr_nham1_ug_v1_5_10yrs',
+ 'dcr_nham1_ugr_v1_5_10yrs',
+ 'dcr_nham1_ugri_v1_5_10yrs',
+ 'dcr_nham2_ug_v1_5_10yrs',
+ 'dcr_nham2_ugr_v1_5_10yrs',
+ 'dcr_nham2_ugri_v1_5_10yrs',
+ 'descddf_v1_5_10yrs',
+ 'filterdist_indx1_v1_5_10yrs',
+ 'filterdist_indx2_v1_5_10yrs',
+ 'filterdist_indx3_v1_5_10yrs',
+ 'filterdist_indx4_v1_5_10yrs',
+ 'filterdist_indx5_v1_5_10yrs',
+ 'filterdist_indx6_v1_5_10yrs',
+ 'filterdist_indx7_v1_5_10yrs',
+ 'filterdist_indx8_v1_5_10yrs',
+ 'footprint_add_mag_cloudsv1_5_10yrs',
+ 'footprint_big_sky_dustv1_5_10yrs',
+ 'footprint_big_sky_nouiyv1_5_10yrs',
+ 'footprint_big_skyv1_5_10yrs',
+ 'footprint_big_wfdv1_5_10yrs',
+ 'footprint_bluer_footprintv1_5_10yrs',
+ 'footprint_gp_smoothv1_5_10yrs',
+ 'footprint_newAv1_5_10yrs',
+ 'footprint_newBv1_5_10yrs',
+ 'footprint_no_gp_northv1_5_10yrs',
+ 'footprint_standard_goalsv1_5_10yrs',
+ 'footprint_stuck_rollingv1_5_10yrs',
+ 'goodseeing_gi_v1_5_10yrs',
+ 'goodseeing_gri_v1_5_10yrs',
+ 'goodseeing_griz_v1_5_10yrs',
+ 'goodseeing_gz_v1_5_10yrs',
+ 'goodseeing_i_v1_5_10yrs',
+ 'greedy_footprint_v1_5_10yrs',
+ 'roll_mod2_dust_sdf_0_20_v1_5_10yrs',
+ 'rolling_mod2_sdf_0_10_v1_5_10yrs',
+ 'rolling_mod2_sdf_0_20_v1_5_10yrs',
+ 'rolling_mod3_sdf_0_10_v1_5_10yrs',
+ 'rolling_mod3_sdf_0_20_v1_5_10yrs',
+ 'rolling_mod6_sdf_0_10_v1_5_10yrs',
+ 'rolling_mod6_sdf_0_20_v1_5_10yrs',
+ 'short_exp_2ns_1expt_v1_5_10yrs',
+ 'short_exp_2ns_5expt_v1_5_10yrs',
+ 'short_exp_5ns_1expt_v1_5_10yrs',
+ 'short_exp_5ns_5expt_v1_5_10yrs',
+ 'spiders_v1_5_10yrs',
+ 'third_obs_pt120v1_5_10yrs',
+ 'third_obs_pt15v1_5_10yrs',
+ 'third_obs_pt30v1_5_10yrs',
+ 'third_obs_pt45v1_5_10yrs',
+ 'third_obs_pt60v1_5_10yrs',
+ 'third_obs_pt90v1_5_10yrs',
+ 'twilight_neo_mod1_v1_5_10yrs',
+ 'twilight_neo_mod2_v1_5_10yrs',
+ 'twilight_neo_mod3_v1_5_10yrs',
+ 'twilight_neo_mod4_v1_5_10yrs',
+ 'u60_v1_5_10yrs',
+ 'var_expt_v1_5_10yrs',
+ 'wfd_depth_scale0_65_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_65_v1_5_10yrs',
+ 'wfd_depth_scale0_70_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_70_v1_5_10yrs',
+ 'wfd_depth_scale0_75_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_75_v1_5_10yrs',
+ 'wfd_depth_scale0_80_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_80_v1_5_10yrs',
+ 'wfd_depth_scale0_85_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_85_v1_5_10yrs',
+ 'wfd_depth_scale0_90_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_90_v1_5_10yrs',
+ 'wfd_depth_scale0_95_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_95_v1_5_10yrs',
+ 'wfd_depth_scale0_99_noddf_v1_5_10yrs',
+ 'wfd_depth_scale0_99_v1_5_10yrs']
+
+var color = d3.scaleOrdinal(families).domain(variables)
+
+//csvfile = './data/data_doubleHist.csv'
+//csvfile = 'https://raw.githubusercontent.com/fedhere/LSSTunknowns/master/pmAnom/TPM.csv'
+
+csvfile = './data/TPM.csv'
+
+function update(){ 
+
+      var nbins = document.querySelector("#nbins_slider").value
+      console.log(nbins)
+      d3.select("#selected_nbins").text('number of bins '+ nbins)
+
+      
+      d3.csv(csvfile).then( function(data){
+      
+      
+        // X axis: scale and draw:
+        var x = d3.scaleLinear()
+            .domain([0, 0.5])     // can use this instead of 1000 to have the max of data: d3.max(data, function(d) {       return +d.price })
+            .range([0, w]);
+        svg.append("g")
+            .attr("transform", "translate(0," + h + ")")
+            .call(d3.axisBottom(x));
+        // Y axis: scale and draw:
+        var y = d3.scaleLinear()
+                  .range([h, 0])
+        
+        // Y axis: right
+        var y2 = d3.scaleLinear()
+                    .range([h, 0])
+                    .domain([0, 1850])
+        if(d3.select("#normCheckbox").property("checked") ){
+             y2.domain([0, 1.05])
+            }
+        d3.select("#axisy2").remove()
+
+        svg.append("g").attr("id", "axisy2").attr("transform", "translate("+w+", 0)")
+                .call(d3.axisRight(y2))
+      
+        // set the parameters for the histogram
+        var histogram = d3.histogram()
+            .value(function(d) { return +d.values; })   // I need to give the vector of value
+            .domain(x.domain())  // then the domain of the graphic
+            .thresholds(x.ticks(nbins)); // then the numbers of bins
+
+        for (var v=0;v<variables.length;v++){
+            // And apply twice this function to data to get the bins.
+            var bins1 = histogram(data.filter( function(d){return d.variable === variables[v]} ));
+            
+
+            y.domain([0, d3.max(bins1, function(d) { return d.length*1.2; })]);   // d3.hist has to be called before the Y axis obviously
+            // update axis and path
+            d3.select("#axisy").remove()
+            d3.selectAll("."+variables[v]).remove()
+            d3.selectAll(".cumpath"+variables[v]).remove()
+            d3.selectAll("#dots"+variables[v]).remove()
+            d3.selectAll(".legendtext"+variables[v]).remove()
+
+            svg.append("g")
+                .attr("id", "axisy")
+                .call(d3.axisLeft(y));
+      
+            //console.log(bins1)
+            // append the bars for series 1
+            var length_cum = 0;
+      
+            svg.selectAll("rect"+v)
+                .data(bins1)
+                .enter()
+                .append("g")
+                .append("rect")
+                  .attr('class', variables[v])
+                  .attr("x", 1)
+                  .attr("transform", function(d) { return "translate(" + x(d.x0) + "," + y(d.length) + ")"; })
+                  .attr("width", function(d) { return x(d.x1) - x(d.x0); })
+                  .attr("height", function(d, i) {
+                                         //length_cum += d.length
+                                    return h - y(d.length); 
+                                })
+                  .style("fill", families[v])
+                  .style("opacity", 0.004)
+      
+            // add line
+            var linedata = [ {"linex":0, "liney":0 + v },
+                    {"linex":0.1, "liney":10 + v },
+                    {"linex":0.2, "liney":50 + v },]
+      
+            // get max length
+            var b_max = 0;
+            for (j in bins1){
+                      b_max +=  bins1[j].length
+                      //console.log(v + ' bins1 '+ b_max)
+            }
+            console.log(v, b_max)
+
+            var h_cum = 0;
+            var line = d3.line().x(function(d){return x(d.x0)}) 
+                                .y(function(d, i){
+                                            h_cum += d.length
+                                            //console.log([v, h_cum])
+                                            if(d3.select("#normCheckbox").property("checked")){
+                                               return y2(h_cum/b_max) }
+                                            else{
+                                            return y2(h_cum)} }
+                                    )
+            
+            svg.append("path")
+               .datum(bins1)
+               .attr("class", "cumpath"+variables[v])
+               .attr("d",line)
+               .style("stroke", color(variables[v])).style("stroke-width", 1)
+               .style("fill", "none")
+               .style("stroke-opacity", 0.2)
+               .on("mouseover", function(d){
+                  d3.select(this).style("stroke-width", 5).style("stroke-opacity", 1)
+                      //d3.select("#"+d).style("stroke-opacity", 1)
+                      tooltip.style("visibility", "visible")
+                        .text( d3.select(this).attr("class").replace("cumpath", "") )
+                        .style("top", (d3.event.pageY-10)+"px")
+                        .style("left",(d3.event.pageX+10)+"px")
+                        .style("opacity", 1) 
+
+                        dbtex = d3.select(this).attr("class").replace("cumpath", "")
+                        plotskymap(pm_csv, dbtex)
+                        })
+                .on("mouseleave", function(d){
+                  d3.select(this).style("stroke-width", 1).style("stroke-opacity", 0.2)
+                      //d3.select("#"+d).style("stroke-opacity", 0.1)
+                         tooltip.style("visibility", "hidden")
+
+               })
+
+      
+            // Handmade legend
+            svg2.append("circle")
+              .attr("cx", function(d,i){if (v>variables.length/2){return 240-10} else {return 0} })
+              .attr("cy", function(d,i){ if (v<=variables.length/2){return v*12} else {return (v-variables.length/2)*12} })      
+              .attr("r", 5)
+              .attr("id", "dots"+variables[v] )
+              .style("fill", families[v] )
+              .on("mouseover", function(d){
+                          d3.select("#dots"+d).attr("r", 8) 
+                        })
+              .on("mouseleave", function(d){
+                          d3.select("#dots"+d).attr("r", 5) 
+
+
+                        })
+              .on("click", function(d){  
+                          d3.select(this).style("opacity", 1).style("stroke-width", 4)
+                                  .style("stroke", "black").style("stroke-opacity", 1)
+                          // Second the hovered specie takes its color
+                          tex = this.id.replace("dots","")
+                          console.log( tex )
+      
+                          d3.selectAll("." +  tex)
+                            .style("opacity", 0.5)//.style("stroke-width", "2")
+                            //.style("fill", "#f7f7f7f7")
+                            //.style("stroke", color(tex)).style("stroke-opacity", 1)
+                          
+                          d3.selectAll('.cumpath'+tex)
+                                      .style("stroke-width", "3")
+                                      //.style("fill", "#f7f7f7f7")
+                                      .style("stroke-opacity", 1)
+
+                          d3.select("#radar_line"+tex)
+                            .style("stroke-width", "5")
+                            .style("stroke-opacity", 1)
+      
+                          d3.selectAll('.barh'+tex)
+                              .style("opacity", 1)
+
+                          //.transition().duration(200)
+                          //.style("stroke", color(d))
+                               } )
+      
+            svg2.append("text")
+                .attr("class", "legendtext"+variables[v])
+                .attr("x", function(){
+                              if (v<= variables.length/2) {return 10} else {return 240}  
+                                    })
+      
+                .attr("y", function(){
+                              if (v<= variables.length/2) {return v*12} else {return (v-variables.length/2)*12} 
+                                    })
+                .text(variables[v]).style("font-size", "12px")
+                .attr("alignment-baseline","middle")
+                .on("mouseover", function(){
+                                    var tex = d3.select(this).text()
+                                    console.log(tex)
+      
+                                    d3.selectAll('.'+tex)
+                                      .style("opacity", 0.5).style("stroke-width", "0")
+                                      //.style("fill", "#f7f7f7f7")
+                                      .style("stroke", color(tex)).style("stroke-opacity", 1)
+      
+                                    d3.selectAll('.cumpath'+tex)
+                                      .style("stroke-width", "3")
+                                      //.style("fill", "#f7f7f7f7")
+                                      .style("stroke-opacity", 1)
+
+                                    // select radar line
+                                    d3.select('#radar_line'+tex)
+                                      .style("stroke-width", "5")
+                                      .style("stroke-opacity", 1)
+
+                                    // select barh
+                                    d3.selectAll('.barh'+tex)
+                                      .style("opacity", 1)
+
+                                      // update skymap
+                                      plotskymap(pm_csv, tex)
+
+                                    })
+                .on("mouseleave", function(){
+                                    var tex = d3.select(this).text()
+                                    console.log(tex)
+      
+                                    d3.selectAll('.'+tex)
+                                      .style("opacity", 0.004).style("stroke-opacity", 0)
+      
+                                    d3.selectAll('.cumpath'+tex)
+                                      .style("stroke-width", "1")
+                                      //.style("fill", "#f7f7f7f7")
+                                      .style("stroke-opacity", 0.2)
+
+                                    d3.selectAll('#radar_line'+tex)
+                                      .style("stroke-width", "1")
+                                      .style("stroke-opacity", 0.1)
+
+                                    // select barh
+                                    d3.selectAll('.barh'+tex)
+                                      .style("opacity", 0.2)
+
+                                    d3.select("#dots"+tex).attr("r", 5).style("stroke-opacity", 0)
+
+                                    })
+      
+        }
+      
+      })
+}
+
+//d3.select("#normCheckbox").on("change", update)
+//add a tooltip
+var tooltip = d3.select("body").append("div")
+    .style("position", "absolute")
+    .style("z-index", "10")
+    .style("visibility", "hidden")
+    .style("background", "white" )
+    .style("opacity", 0.6)
+
+update()
+
+// --------------------------------------------------------------------------
+// plot skymap
+//append svg
+var height3 = 500
+var svg3 = d3.select("#skymap")
+      .append("svg")
+      .attr("width", w + margin.left + margin.right)
+      .attr("height", height3 + margin.top + margin.bottom)
+      //.style("background-color", "rgba(128, 255, 128, 0.1)")
+      .style("background-color", "#f7f7f7f7")
+      .append("g")
+      .attr("transform", "translate("+margin.left+", "+margin.top+")")
+
+// add axis
+var x3 = d3.scaleLinear()
+      .domain([0, 360])
+      .range([0, w]);
+
+svg3.append("g")
+  .attr("transform", "translate(0, "+height3+")")
+  .call(d3.axisBottom(x3));
+
+var y3 = d3.scaleLinear()
+      .domain([-90, 90])
+      .range([height3, 0]);
+
+svg3.append("g")
+  .attr("transform", "translate(0, 0)")
+  .call(d3.axisLeft(y3));
+
+svg3.append("text").attr("text-anchor", "end")
+    .attr("id", "skymap_title")
+    .attr('x', w/2+30)
+    .attr('y', 20)
+    .text("db")
+
+//var cmap = d3.scaleSequential(d3.interpolateSpectral).domain([1000000, 0])
+var cmap = d3.scaleSequential(d3.interpolateViridis).domain([0, 0.5])
+
+// projection
+var proj = d3.geoMollweide().scale(160)
+
+//var nside16 = "./data/Fields_nside16.csv"
+var pm_csv = "./data/pm_skymap.csv"
+
+plotskymap(pm_csv, variables[0])
+coord = 'eq'
+function plotskymap(csv_skymap, db){
+          // read csv file
+         d3.select("#skymap_title").text(db)
+         d3.csv(csv_skymap).then( function(data){
+          
+          console.log(data[0])
+          console.log(data[0].value)
+          svg3.selectAll("circle").remove()
+          
+          // select data by conditions
+          var data = data.filter( function(d){return d.db==db} );
+
+          svg3.selectAll("circle")
+            .data(data)
+            .enter()
+            .append("circle")
+            .attr("class", "skymap")
+              .attr("cx", function (d) { 
+          
+                if (coord=="eq"){   
+                  var projx = proj( [-d.fieldRa, d.fieldDec] )[0];
+                  xLabel.text("RA");
+                  }
+          
+                else {
+                  var projx = proj( [-d.fieldGl, d.fieldGb] )[0];
+                  xLabel.text("Gl");
+                }
+          
+                var newx = changeMinMax(projx, 25, 930, 0, 360);
+                return   x3(newx); } ) 
+              .attr("cy", function (d) { 
+          
+                 if (coord=="eq"){   
+                  var projy = proj( [-d.fieldRa, d.fieldDec] )[1];
+                  yLabel.text("Dec"); }
+          
+                else {
+                  var projy = proj( [-d.fieldGl, d.fieldGb] )[1];
+                    yLabel.text("Gb");}
+          
+                var newy = - changeMinMax(projy, 20, 480, -90, 90);
+                return   y3( newy ); } ) 
+              .attr("r", 5)
+              .style("opacity", 0.5)
+              .style("fill", function(d){return cmap(d.value)})
+              .on('mouseover', mouseover)
+              .on('mouseleave', mouseleave)
+
+          })
+}
+
+var changeMinMax = function(oldValue, oldMin, oldMax, newMin, newMax){
+
+  var oldRange = oldMax - oldMin;
+  var newRange = newMax - newMin;
+
+  var newValue = ((oldValue - oldMin) * newRange / oldRange) + newMin; 
+
+  return newValue; 
+}
+
+// add label
+var xLabel = svg3.append("text")
+  .attr("x", w/2)
+  .attr("y", height3 + margin.top/2)
+  .text("RA");
+
+var yLabel = svg3.append("text")
+  .attr("transform", "rotate(-90)")
+  .attr("y", -margin.left+20)
+  .attr("x", -height3/2)
+  .text("DEC")
+
+ // mouseover function
+ var mouseover = function(d) {
+  //console.log( proj( [-d.fieldRa, d.fieldDec] ) )
+    d3.select(this)
+        .style("stroke", "black")
+        .style("stroke-opacity", 1)
+        //.style("opacity", 1)
+        //.attr("r", 5)
+        .style("cursor", "default")
+
+    tooltip.style("visibility", "visible")
+        .text([d.value])
+        .style("top", (d3.event.pageY-10)+"px")
+        .style("left",(d3.event.pageX+10)+"px")
+        .style("opacity", 1) 
+
+  }
+
+// mouseleave 
+var mouseleave = function(d){
+  d3.select(this)
+   .style("stroke", "none")
+  //  .style("opacity", 0.5)
+    //.attr("r", 2)
+
+  tooltip.style("visibility", "hidden")
+
+}
+
+// --------------------------------------------------------------------------
+// plot radar
+
+var height4 = 500
+
+var centerXPos = w2 / 2 + margin.left;
+var centerYPos = height4 / 2 + margin.top;
+
+var svg4 = d3.select("#radar").append("svg")
+    .attr("width", w2 + margin.left + margin.right)
+    .attr("height", height4 + margin.top + margin.bottom)
+    .style("background-color", "#f7f7f7f7")
+    .append("g")
+    .attr("transform", "translate(" + centerXPos + ", " + centerYPos + ")")
+
+var maxValue = 1
+var topValue = 1.0 * maxValue;
+var ticks = [];
+for(i=0; i <=5;i+=1){
+  ticks[i] = topValue*i/5;
+}
+
+var circleConstraint = d3.min([height4, w2]);
+
+var radius = d3.scaleLinear().range([0, (circleConstraint / 2)])
+               .domain([0,topValue])
+
+var circleAxes = svg4.selectAll(".circle-ticks")
+      .data(ticks)
+      .enter().append("g")
+      .attr("class", "circle-ticks");
+   
+  circleAxes.append("svg:circle")
+      .attr("r", function(d) {return radius(d);})
+      .attr("class", "circle")
+      .style("stroke", "#CCC")
+      .style("fill", "none");
+
+  circleAxes.append("svg:text")
+      .attr("text-anchor", "middle")
+      .attr("dy", function(d) {return radius(d)})
+      .text(String);
+
+var csv_radar = "./data/df_pm_v15_t.csv"
+d3.csv(csv_radar).then( function(data) {
+
+    lineAxes = svg4.selectAll('.line-ticks')
+        .data(data)
+        .enter().append('svg:g')
+        .attr("transform", function (d, i) {
+            return "rotate(" + ((i / data.length * 360) - 90) +
+                ")translate(" + radius(topValue) + ")";
+        })
+        .attr("class", "line-ticks");
+  
+    lineAxes.append('svg:line')
+        .attr("x2", -1 * radius(topValue))
+        .style("stroke", "#CCC")
+        .style("fill", "none");
+  
+    lineAxes.append('svg:text')
+        .text(function(d) { return d.section; })
+        .attr("text-anchor", "middle") 
+        .attr("transform", function (d, i) {
+            return "rotate("+(90-(i*360/data.length))+")";
+        });
+  
+      // 
+
+    var lines = color.domain().map(function(name){
+          return (data.concat(data[0])).map(function(d){ 
+          return +d[name]; });
+    });
+    
+    var sets = svg4.selectAll(".series")
+          .data(variables)
+          .enter().append("g")
+          .attr("class", "series");
+
+        sets.append('svg:path')
+          .data(lines)
+          .attr("class", "line")
+          .attr("d", d3.lineRadial()
+                    .radius(function (d) {
+                        return radius(d);
+                    })
+                    .angle(function (d, i) {
+                      if (i == data.length) {
+                          i = 0;
+                      } //close the line
+                      return (i / data.length) * 2 * Math.PI;
+                  }))
+          .data(variables).attr("id", function(d){return "radar_line"+d} )
+          .style("stroke-width", 1)
+          .style("stroke-opacity", 0.1)
+          .style("fill","none")
+          .style("stroke", function(d,i){
+                                return color(d);
+                          })
+          .on("mouseover", function(d){
+                d3.select(this).style("stroke-width", 5).style("stroke-opacity", 1)
+                //d3.select("#"+d)
+
+                tooltip.style("visibility", "visible")
+                    .text( d )
+                    .style("top", (d3.event.pageY-10)+"px")
+                    .style("left",(d3.event.pageX+10)+"px")
+                    .style("opacity", 1) 
+              })
+          .on("mouseleave", function(d){
+                d3.select(this).style("stroke-width", 2).style("stroke-opacity", 0.1)
+                //d3.select("#"+d).style("stroke-opacity", 0.1)
+                tooltip.style("visibility", "hidden")
+
+               })
+  })
+
+
+// --------------------------------------------------------------------------
+// plot barh
+var height5 = height + height4 
+var margin_left = 250
+var svg5 = d3.select("#barh")
+      .append("svg")
+      .attr("width", w + margin_left + margin.right)
+      .attr("height", height5 + margin.top + margin.bottom)
+      //.style("background-color", "rgba(128, 255, 128, 0.1)")
+      .style("background-color", "#f7f7f7f7")
+      .append("g")
+      .attr("transform", "translate("+margin_left+", "+margin.top+")")
+
+// add axis
+
+// add axis, set range and ticks, append to svg
+var x5 = d3.scaleLinear().domain([0, 1]).range([0, w])
+var y5 = d3.scaleBand().domain(variables).range([0, height5])
+var xAxis5 = d3.axisBottom(x5).tickValues([0, 0.5, 1]).tickFormat(d3.format(".1f"))
+svg5.append("g").attr("id", "xaxis").attr("transform", "translate(0, "+height5+")").call(xAxis5)
+
+//svg5.append("g").attr("transform", "translate(0, "+height5+")").call(xAxis5)
+//svg5.append("g").attr("transform", "translate(0, 0)").call(d3.axisLeft(y5))
+
+var csv_barh = "./data/df_pm_v15.csv"
+
+function update_barh(){
+
+        // remove previous plots
+        d3.select(".bar1_rect").remove()
+        d3.select(".bar2_rect").remove()
+        d3.select(".bar3_rect").remove()
+
+        d3.select("#barh").selectAll("#yaxis").remove()
+        //d3.select("#barh").selectAll("text").remove()
+
+        // get value from <select> tag 
+        var barh_sortby = d3.select("#barh_sortby").property("value")
+        var barh_order = d3.select("#barh_order").property("value")
+      
+        d3.csv(csv_barh, function(d){
+                // function to format csv data
+                //map barh data based on weights
+                  var wtpm = d3.select("#wTPM").property("value")
+                  var wci = d3.select("#wCI").property("value")
+                  console.log("wtpm"+wtpm)
+                  return { 'db': d.db,
+                           'TPM': d.TPM*wtpm,
+                           'CI': d.CI*wci,
+                           'LS': d.LS*(1-wtpm-wci)
+                           }
+                }
+              )
+          .then( function(data){
+
+              data.sort(function(a,b){
+                  
+              if (barh_order=='ascending'){
+                  if(barh_sortby=='TPM'){ return d3.ascending(a.TPM, b.TPM)}
+                  else if(barh_sortby=='LS'){ return d3.ascending(a.LS, b.LS)}
+                  else if(barh_sortby=='CI'){ return d3.ascending(a.CI, b.CI)}
+                  else if(barh_sortby=='Sum'){ return d3.ascending(a.TPM*1+ a.LS*1+ a.CI*1, b.TPM*1+ b.LS*1+ b.CI*1)}
+                  else if(barh_sortby=='name'){ return d3.ascending(a.db, b.db)}
+
+                }
+              else{
+                  if(barh_sortby=='TPM'){ return d3.descending(a.TPM, b.TPM)}
+                  else if(barh_sortby=='LS'){ return d3.descending(a.LS, b.LS)}
+                  else if(barh_sortby=='CI'){ return d3.descending(a.CI, b.CI)}
+                  else if(barh_sortby=='Sum'){ return d3.descending(a.TPM*1+ a.LS*1+ a.CI*1, b.TPM*1+ b.LS*1+ b.CI*1)}
+                  else if(barh_sortby=='name'){ return d3.descending(a.db, b.db)}
+
+                }
+                })
+
+                //console.log(data[0])
+                y5.domain(data.map(d=>d.db))
+                svg5.append("g").attr("id", "yaxis").attr("transform", "translate(0, 0)").call(d3.axisLeft(y5))
+
+                svg5.append("g").attr("class", "bar1_rect")
+                    .selectAll("bar1")
+                    .data(data) 
+                    .enter()
+                    .append("rect")
+                    .attr("class", d=>"barh"+d.db )
+                    .attr("x", 0)
+                    .attr("y", d=>y5(d.db)+5 )
+                    .attr("width", d=>x5(d.TPM) )
+                    .attr("height", 5)
+                    .attr("id", d=>"TPM="+d.TPM)
+                    .style("fill", "red")
+                    .style("opacity", 0.2)
+                    .on("mouseover", bar_mouseover)
+                    .on("mouseleave", bar_mouseleave)
+        
+                svg5.append("g").attr("class", "bar2_rect")
+                    .selectAll("bar2")
+                    .data(data)
+                    .enter()
+                    .append("rect")
+                    .attr("class", d=>"barh"+d.db)
+                    .attr("x", d=>x5(d.TPM))
+                    .attr("y", d=>y5(d.db) + 5 )
+                    .attr("width", d=>x5(d.LS) )
+                    .attr("height", 5)        
+                    .attr("id", d=>"LS="+d.LS)
+                    .style("fill", "blue")
+                    .style("opacity", 0.2)
+                    .on("mouseover", bar_mouseover)
+                    .on("mouseleave", bar_mouseleave)
+        
+                svg5.append("g").attr("class", "bar3_rect")
+                    .selectAll("bar3")
+                    .data(data)
+                    .enter()
+                    .append("rect")
+                    .attr("class", d=>"barh"+d.db)
+                    .attr("x", d=>x5(d.TPM*1+d.LS*1))
+                    .attr("y", d=>y5(d.db) + 5 )
+                    .attr("width", d=>x5(d.CI) )
+                    .attr("height", 5)
+                    .attr("id", d=>"CI="+d.CI)
+                    .style("fill", "green")
+                    .style("opacity", 0.2)
+                    .on("mouseover", bar_mouseover)
+                    .on("mouseleave", bar_mouseleave)
+        
+            })
+
+
+}
+append_barh_legend()
+
+function append_barh_legend(){
+              var legendx = 600
+              // add legend
+              svg5.append("rect").attr("id", "bar1_rect")
+                .attr("x", legendx).attr("y", 10).attr("width",25).attr("height", 5).attr("fill", "red")
+                .on("mouseover", legend_click).on("mouseleave", legend_dblclick)
+              svg5.append("text").attr("id", "bar1_text").attr("x", legendx+30).attr("y", 15)
+                  .text("TPM").style("font-size", "12px")
+              
+              svg5.append("rect").attr("id", "bar2_rect")
+                .attr("x", legendx).attr("y", 30).attr("width",25).attr("height", 5).attr("fill", "blue")
+                .on("mouseover", legend_click).on("mouseleave", legend_dblclick)
+              svg5.append("text").attr("id", "bar2_text").attr("x", legendx+30).attr("y", 35)
+                  .text("LS").style("font-size", "12px")
+              
+              svg5.append("rect").attr("id", "bar3_rect")
+                .attr("x", legendx).attr("y", 50).attr("width",25).attr("height",5).attr("fill", "green")
+                .on("mouseover", legend_click).on("mouseleave", legend_dblclick)
+              svg5.append("text").attr("id", "bar3_text").attr("x", legendx+30).attr("y", 55)
+                  .text("CI").style("font-size", "12px")
+        }
+
+function legend_click(){
+                    d3.select("."+this.id).selectAll("rect").style("opacity", 1)
+          }
+
+function legend_dblclick(){
+                  console.log(this.id)
+                  d3.select("."+this.id).selectAll("rect").style("opacity", 0.2)
+          }
+
+function bar_mouseover(d){
+                  //console.log(this.id)
+                  d3.select(this).style("opacity", 1)
+                  tooltip.style("visibility", "visible")
+                        .text( this.id )
+                        .style("top", (d3.event.pageY-10)+"px")
+                        .style("left",(d3.event.pageX+10)+"px")
+                        .style("opacity", 1) 
+          }
+function bar_mouseleave(d){
+                  d3.select(this).style("opacity", 0.2)
+                  tooltip.style("visibility", "hidden")
+
+         }
+
+update_barh()
+
+// update when any select changes
+d3.selectAll("select").on("change", function(){ update_barh() } )
+
+d3.selectAll(".barhweight").on("change", function(){ update_barh() } )
+
+
+//svg5.append("select")
+</script>
+
+</body>
+</html>
