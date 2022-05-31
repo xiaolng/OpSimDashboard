@@ -11,24 +11,22 @@
 <p>Enter link to a csv file (make sure same format as <a href= "https://github.com/xiaolng/widgets/blob/master/data/df_pm_v15.csv"> this example</a>) then click Plot:
 </p>
 <textarea id="csvlink" cols="60" >./data/df_pm_v15.csv</textarea>
- <button  class="plotbutton" onclick="update()" > Plot </button>
+ <button  class="plotbutton" onclick="plot()" > Plot </button>
 <p></p>
 
     <div>
       <select id="barh_sortby" >
       </select>
-      
+
       <select id="barh_order" >
         <option value="ascending" selected> ascending </option>
         <option value="descending" > descending </option>
       </select>
     </div>
 
-
 <div id="barh"></div>
 
 </body>
-
 </html>
 
 <!-- load d3.js-->
@@ -134,7 +132,7 @@ function update(){
 
                   // draw heatmap rect
                   for(var i=1; i<metrics.length;i++) {
-                      console.log(i, metrics[i])
+                      //console.log(i, metrics[i])
                       svg.append("g").attr("class", metrics[i]+"_rect")
                           .selectAll("barh"+i)
                           .data(data) 
@@ -149,8 +147,7 @@ function update(){
                           .on("mouseover", bar_mouseover)
                           .on("mouseleave", bar_mouseleave)
                   }
-
-            }  )
+            })
 }
 
 //var metrics = ['m1', 'm2', 'm3']
@@ -175,21 +172,28 @@ function bar_mouseover(d){
             .style("top", (d3.event.pageY-10)+"px")
             .style("left",(d3.event.pageX+10)+"px")
             .style("opacity", 1)
-
           }
 
 function bar_mouseleave(d){
                   d3.select(this).style("opacity", 0.4)
                   tooltip.style("visibility", "hidden")
-
          }
 
 // update when any select changes
 d3.selectAll("select").on("change", function(){ update() } )
 
-
-
 // run when first load
 update()
+
+// plot function
+
+function plot(){
+    // add metrics to sortby select
+    d3.select("#barh_sortby")
+        .selectAll("option").remove()
+
+  update()
+}
+
 
 </script>
