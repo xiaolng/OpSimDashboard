@@ -143,7 +143,7 @@ function update(){
                           .attr("width", x.bandwidth())
                           .attr("height", y.bandwidth())
                           .style("fill", d=>cmap( d[metrics[i]] ))
-                          .style("opacity", 0.4)
+                          .style("opacity", 0.8)
                           .on("mouseover", bar_mouseover)
                           .on("mouseleave", bar_mouseleave)
                   }
@@ -175,7 +175,7 @@ function bar_mouseover(d){
           }
 
 function bar_mouseleave(d){
-                  d3.select(this).style("opacity", 0.4)
+                  d3.select(this).style("opacity", 0.8)
                   tooltip.style("visibility", "hidden")
          }
 
